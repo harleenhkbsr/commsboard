@@ -1,0 +1,8 @@
+   POST http://localhost:4000/api/boards
+   Content-Type: application/json
+
+   {"notionDatabaseId": "3c2dbffc0bda80018212f62223a44459", "name": "Comms Board"}
+
+   ###
+
+   GET http://localhost:4000/api/boards

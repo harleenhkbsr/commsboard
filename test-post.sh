@@ -1,0 +1,1 @@
+   curl -X POST http://localhost:4000/api/boards -H "Content-Type: application/json" -d "{\"notionDatabaseId\": \"3c2dbffc0bda80018212f62223a44459\", \"name\": \"Comms Board\"}"

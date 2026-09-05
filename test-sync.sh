@@ -1,0 +1,1 @@
+   curl -X POST http://localhost:4000/api/boards/1/sync

@@ -8,6 +8,19 @@ db.exec(`
     notionDatabaseId TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     addedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS cards_snapshot (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    boardId INTEGER NOT NULL,
+    notionPageId TEXT NOT NULL UNIQUE,
+    schoolName TEXT,
+    status TEXT,
+    assignedMemberId TEXT,
+    assignedMemberName TEXT,
+    lastEditedTime TEXT,
+    lastSyncedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (boardId) REFERENCES boards(id)
   )
 `);
 

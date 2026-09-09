@@ -132,6 +132,27 @@ app.post('/api/boards/:id/sync', async (req, res) => {
   }
 });
 
+app.get('/api/boards/:id/cards', (req, res) => {
+  const boardId = req.params.id;
+  const memberId = req.query.memberId;
+
+  let cards;
+  
+  if (memberId) {
+    cards = db.prepare(`
+      SELECT * FROM cards_snapshot
+      WHERE boardId = ? AND assignedMemberId = ?
+    `).all(boardId, memberId);
+  } else {
+    cards = db.prepare(`
+      SELECT * FROM cards_snapshot
+      WHERE boardId = ?
+    `).all(boardId);
+  }
+
+  res.json(cards);
+});
+
 app.listen(4000, () => {
   console.log('Server running on http://localhost:4000');
 });

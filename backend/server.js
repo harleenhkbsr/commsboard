@@ -91,25 +91,25 @@ app.post('/api/boards/:id/sync', async (req, res) => {
     `);
 
     for (const page of data.results) {
-      const properties = page.properties;
+  const properties = page.properties;
+  
+  const schoolName =
+  properties.Name?.title?.[0]?.plain_text ?? null;
+  
+  const status =
+  properties.Status?.status?.name ?? null;
 
-      const schoolName =
-        properties.schoolName?.title?.[0]?.plain_text ?? null;
+  const lastEditedTime =
+    page.last_edited_time ?? null;
 
-      const status =
-        properties.status?.status?.name ?? null;
-
-      const lastEditedTime =
-        page.last_edited_time ?? null;
-
-      stmt.run(
-        boardId,
-        page.id,
-        schoolName,
-        status,
-        lastEditedTime
-      );
-    }
+  stmt.run(
+    boardId,
+    page.id,
+    schoolName,
+    status,
+    lastEditedTime
+  );
+}
 
     const cards = db.prepare(`
       SELECT * FROM cards_snapshot

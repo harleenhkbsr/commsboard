@@ -72,32 +72,42 @@ app.post('/api/boards/:id/sync', async (req, res) => {
     const data = await response.json();
 
     // Insert/update each card
-    const stmt = db.prepare(`
-      INSERT INTO cards_snapshot (
-        boardId,
-        notionPageId,
-        schoolName,
-        status,
-        lastEditedTime
-      )
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(notionPageId)
-      DO UPDATE SET
-        boardId = excluded.boardId,
-        schoolName = excluded.schoolName,
-        status = excluded.status,
-        lastEditedTime = excluded.lastEditedTime,
-        lastSyncedAt = CURRENT_TIMESTAMP
-    `);
+const stmt = db.prepare(`
+  INSERT INTO cards_snapshot (
+    boardId,
+    notionPageId,
+    schoolName,
+    status,
+    assignedMemberId,
+    assignedMemberName,
+    lastEditedTime
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(notionPageId)
+  DO UPDATE SET
+    boardId = excluded.boardId,
+    schoolName = excluded.schoolName,
+    status = excluded.status,
+    assignedMemberId = excluded.assignedMemberId,
+    assignedMemberName = excluded.assignedMemberName,
+    lastEditedTime = excluded.lastEditedTime,
+    lastSyncedAt = CURRENT_TIMESTAMP
+`);
 
-    for (const page of data.results) {
+for (const page of data.results) {
   const properties = page.properties;
-  
+
   const schoolName =
-  properties.Name?.title?.[0]?.plain_text ?? null;
-  
+    properties.Name?.title?.[0]?.plain_text ?? null;
+
   const status =
-  properties.Status?.status?.name ?? null;
+    properties.Status?.status?.name ?? null;
+
+  const assignedMemberId =
+    properties.Person?.people?.[0]?.id ?? null;
+
+  const assignedMemberName =
+    properties.Person?.people?.[0]?.name ?? null;
 
   const lastEditedTime =
     page.last_edited_time ?? null;
@@ -107,6 +117,8 @@ app.post('/api/boards/:id/sync', async (req, res) => {
     page.id,
     schoolName,
     status,
+    assignedMemberId,
+    assignedMemberName,
     lastEditedTime
   );
 }

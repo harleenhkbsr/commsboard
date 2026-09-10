@@ -42,23 +42,23 @@ comms-board-tracker/
 | notionPageId | TEXT | unique — upserted on re-sync |
 | schoolName | TEXT | from the card's title property |
 | status | TEXT | from the card's status property |
-| assignedMemberId | TEXT | nullable until a Person property is added in Notion |
-| assignedMemberName | TEXT | nullable, same as above |
+| assignedMemberId | TEXT | from the card's Person property |
+| assignedMemberName | TEXT | from the card's Person property |
 | lastEditedTime | TEXT | Notion's own timestamp |
 | lastSyncedAt | TEXT | when this app last pulled the card |
 
 ## API
 
-| Method | Route                  | Does                                                          |
-| ------ | ---------------------- | ------------------------------------------------------------- |
-| POST   | `/api/boards`          | register a Notion database as a trackable board               |
-| GET    | `/api/boards`          | list registered boards                                        |
-| POST   | `/api/boards/:id/sync` | pull current cards from Notion into `cards_snapshot` (upsert) |
+| Method | Route                     | Does                                                          |
+| ------ | ------------------------- | ------------------------------------------------------------- |
+| POST   | `/api/boards`             | register a Notion database as a trackable board               |
+| GET    | `/api/boards`             | list registered boards                                        |
+| POST   | `/api/boards/:id/sync`    | pull current cards from Notion into `cards_snapshot` (upsert) |
+| GET    | `/api/boards/:id/cards`   | list cards for a board (`?memberId=` optional filter)         |
+| GET    | `/api/boards/:id/members` | deduplicated list of members with cards on a board            |
 
 Planned but not yet built:
 
-- `GET /api/boards/:id/members` — member list for the selector
-- `GET /api/boards/:id/cards?memberId=&since=` — filtered card list
 - `GET /api/cards/:pageId/comments` — raw comments for a card
 - `GET /api/cards/:pageId/summary` — lazily-generated AI summary of a card's comments (Gemini)
 
@@ -86,14 +86,24 @@ Planned but not yet built:
    ```bash
    curl -X POST http://localhost:4000/api/boards/1/sync
    ```
+6. Fetch cards or members:
+   ```bash
+   curl http://localhost:4000/api/boards/1/cards
+   curl http://localhost:4000/api/boards/1/members
+   ```
 
 ## Status
 
-- [x] Notion integration created and permissioned (read content, read comments, read users without email)
+- [x] Notion integration created and permissioned
 - [x] `boards` table + `POST`/`GET /api/boards`
 - [x] `cards_snapshot` table
-- [x] `POST /api/boards/:id/sync` pulling real data from Notion
-- [ ] Member extraction + selector
+- [x] `POST /api/boards/:id/sync` pulling real data from Notion (upsert verified)
+- [x] `GET /api/boards/:id/cards` with member filtering
+- [x] `GET /api/boards/:id/members`
 - [ ] Comments endpoint
 - [ ] Frontend dashboard
 - [ ] Gemini-based comment summarization (stretch goal)
+
+```
+
+```

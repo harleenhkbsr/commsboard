@@ -165,6 +165,19 @@ app.get('/api/boards/:id/cards', (req, res) => {
   res.json(cards);
 });
 
+app.get('/api/boards/:id/members', (req, res) => {
+  const boardId = req.params.id;
+
+  const members = db.prepare(`
+    SELECT DISTINCT assignedMemberId, assignedMemberName
+    FROM cards_snapshot
+    WHERE boardId = ?
+      AND assignedMemberId IS NOT NULL
+  `).all(boardId);
+
+  res.json(members);
+});
+
 app.listen(4000, () => {
   console.log('Server running on http://localhost:4000');
 });

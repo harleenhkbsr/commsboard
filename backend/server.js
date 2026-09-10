@@ -111,6 +111,12 @@ for (const page of data.results) {
 
   const lastEditedTime =
     page.last_edited_time ?? null;
+// TODO: add "Temperature" tag support (Hot/Cold/Mild select property)
+// 1. db.js — add a `temperature TEXT` column to cards_snapshot
+// 2. sync route — extract it: properties.Temperature?.select?.name ?? null
+// 3. add `temperature` to the INSERT column list + placeholders (?)
+// 4. add `temperature = excluded.temperature` to the ON CONFLICT DO UPDATE SET
+// 5. pass `temperature` into stmt.run(...) in the same position as the column list
 
   stmt.run(
     boardId,

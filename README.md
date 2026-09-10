@@ -103,7 +103,3 @@ Planned but not yet built:
 - [ ] Comments endpoint
 - [ ] Frontend dashboard
 - [ ] Gemini-based comment summarization (stretch goal)
-
-```
-
-```

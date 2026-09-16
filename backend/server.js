@@ -7,6 +7,11 @@ const app = express();
 
 app.use(express.json());
 
+
+// --------------------------------------------------
+// CREATE A BOARD
+// --------------------------------------------------
+
 app.post('/api/boards', (req, res) => {
   const { notionDatabaseId, name } = req.body;
 
@@ -18,11 +23,17 @@ app.post('/api/boards', (req, res) => {
   const result = stmt.run(notionDatabaseId, name);
 
   const board = db.prepare(`
-    SELECT * FROM boards WHERE id = ?
+    SELECT * FROM boards
+    WHERE id = ?
   `).get(result.lastInsertRowid);
 
   res.json(board);
 });
+
+
+// --------------------------------------------------
+// GET ALL BOARDS
+// --------------------------------------------------
 
 app.get('/api/boards', (req, res) => {
   const boards = db.prepare(`
@@ -32,13 +43,66 @@ app.get('/api/boards', (req, res) => {
   res.json(boards);
 });
 
+
+// --------------------------------------------------
+// GET CARDS FOR A BOARD
+// --------------------------------------------------
+
+app.get('/api/boards/:id/cards', (req, res) => {
+  const boardId = req.params.id;
+  const memberId = req.query.memberId;
+
+  let cards;
+
+  if (memberId) {
+    cards = db.prepare(`
+      SELECT * FROM cards_snapshot
+      WHERE boardId = ?
+        AND assignedMemberId = ?
+    `).all(boardId, memberId);
+  } else {
+    cards = db.prepare(`
+      SELECT * FROM cards_snapshot
+      WHERE boardId = ?
+    `).all(boardId);
+  }
+
+  res.json(cards);
+});
+
+
+// --------------------------------------------------
+// GET MEMBERS FOR A BOARD
+// --------------------------------------------------
+
+app.get('/api/boards/:id/members', (req, res) => {
+  const boardId = req.params.id;
+
+  const members = db.prepare(`
+    SELECT DISTINCT
+      assignedMemberId,
+      assignedMemberName
+    FROM cards_snapshot
+    WHERE boardId = ?
+      AND assignedMemberId IS NOT NULL
+  `).all(boardId);
+
+  res.json(members);
+});
+
+
+// --------------------------------------------------
+// SYNC BOARD FROM NOTION
+// --------------------------------------------------
+
 app.post('/api/boards/:id/sync', async (req, res) => {
   try {
     const boardId = req.params.id;
 
     // Find the board
     const board = db.prepare(`
-      SELECT * FROM boards WHERE id = ?
+      SELECT * FROM boards
+      WHERE id = ?
     `).get(boardId);
 
     if (!board) {
@@ -47,7 +111,11 @@ app.post('/api/boards/:id/sync', async (req, res) => {
       });
     }
 
-    // Query Notion
+
+    // --------------------------------------------------
+    // GET CURRENT PAGES FROM NOTION
+    // --------------------------------------------------
+
     const response = await fetch(
       `https://api.notion.com/v1/databases/${board.notionDatabaseId}/query`,
       {
@@ -60,6 +128,8 @@ app.post('/api/boards/:id/sync', async (req, res) => {
       }
     );
 
+
+    // Handle Notion API errors
     if (!response.ok) {
       const error = await response.text();
 
@@ -69,70 +139,143 @@ app.post('/api/boards/:id/sync', async (req, res) => {
       });
     }
 
+
     const data = await response.json();
 
-    // Insert/update each card
-const stmt = db.prepare(`
-  INSERT INTO cards_snapshot (
-    boardId,
-    notionPageId,
-    schoolName,
-    status,
-    assignedMemberId,
-    assignedMemberName,
-    lastEditedTime
-  )
-  VALUES (?, ?, ?, ?, ?, ?, ?)
-  ON CONFLICT(notionPageId)
-  DO UPDATE SET
-    boardId = excluded.boardId,
-    schoolName = excluded.schoolName,
-    status = excluded.status,
-    assignedMemberId = excluded.assignedMemberId,
-    assignedMemberName = excluded.assignedMemberName,
-    lastEditedTime = excluded.lastEditedTime,
-    lastSyncedAt = CURRENT_TIMESTAMP
-`);
 
-for (const page of data.results) {
-  const properties = page.properties;
+    // --------------------------------------------------
+    // GET THE NOTION PAGE IDS
+    // --------------------------------------------------
 
-  const schoolName =
-    properties.Name?.title?.[0]?.plain_text ?? null;
+    const notionPageIds = data.results.map(page => page.id);
 
-  const status =
-    properties.Status?.status?.name ?? null;
 
-  const assignedMemberId =
-    properties.Person?.people?.[0]?.id ?? null;
+    // --------------------------------------------------
+    // UPSERT CURRENT NOTION CARDS
+    // --------------------------------------------------
 
-  const assignedMemberName =
-    properties.Person?.people?.[0]?.name ?? null;
+    const stmt = db.prepare(`
+      INSERT INTO cards_snapshot (
+        boardId,
+        notionPageId,
+        schoolName,
+        status,
+        assignedMemberId,
+        assignedMemberName,
+        tag,
+        label,
+        lastEditedTime
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 
-  const lastEditedTime =
-    page.last_edited_time ?? null;
-// TODO: add "Temperature" tag support (Hot/Cold/Mild select property)
-// 1. db.js — add a `temperature TEXT` column to cards_snapshot
-// 2. sync route — extract it: properties.Temperature?.select?.name ?? null
-// 3. add `temperature` to the INSERT column list + placeholders (?)
-// 4. add `temperature = excluded.temperature` to the ON CONFLICT DO UPDATE SET
-// 5. pass `temperature` into stmt.run(...) in the same position as the column list
+      ON CONFLICT(notionPageId)
+      DO UPDATE SET
+        boardId = excluded.boardId,
+        schoolName = excluded.schoolName,
+        status = excluded.status,
+        assignedMemberId = excluded.assignedMemberId,
+        assignedMemberName = excluded.assignedMemberName,
+        tag = excluded.tag,
+        label = excluded.label,
+        lastEditedTime = excluded.lastEditedTime,
+        lastSyncedAt = CURRENT_TIMESTAMP
+    `);
 
-  stmt.run(
-    boardId,
-    page.id,
-    schoolName,
-    status,
-    assignedMemberId,
-    assignedMemberName,
-    lastEditedTime
-  );
-}
+
+    // Process every Notion page
+    for (const page of data.results) {
+      const properties = page.properties;
+
+
+      // School name
+      const schoolName =
+        properties.Name?.title?.[0]?.plain_text ?? null;
+
+
+      // Status
+      const status =
+        properties.Status?.status?.name ?? null;
+
+
+      // Assigned member
+      const assignedMemberId =
+        properties.Assign?.people?.[0]?.id ?? null;
+
+      const assignedMemberName =
+        properties.Assign?.people?.[0]?.name ?? null;
+
+
+      // Tag
+      const tag =
+        properties.Tag?.select?.name ?? null;
+
+
+      // Label
+      const label =
+        properties.Label?.select?.name ?? null;
+
+
+      // Last edited time
+      const lastEditedTime =
+        page.last_edited_time ?? null;
+
+
+      // Save/update the card
+      stmt.run(
+        boardId,
+        page.id,
+        schoolName,
+        status,
+        assignedMemberId,
+        assignedMemberName,
+        tag,
+        label,
+        lastEditedTime
+      );
+    }
+
+
+    // --------------------------------------------------
+    // DELETE CARDS THAT NO LONGER EXIST IN NOTION
+    // --------------------------------------------------
+
+    if (notionPageIds.length === 0) {
+
+      // Notion database is empty,
+      // so remove all cards for this board.
+      db.prepare(`
+        DELETE FROM cards_snapshot
+        WHERE boardId = ?
+      `).run(boardId);
+
+    } else {
+
+      // Build ?, ?, ?, ... for the Notion page IDs
+      const placeholders = notionPageIds
+        .map(() => '?')
+        .join(', ');
+
+      db.prepare(`
+        DELETE FROM cards_snapshot
+        WHERE boardId = ?
+          AND notionPageId NOT IN (${placeholders})
+      `).run(boardId, ...notionPageIds);
+    }
+
+
+    // --------------------------------------------------
+    // GET UPDATED CARDS
+    // --------------------------------------------------
 
     const cards = db.prepare(`
       SELECT * FROM cards_snapshot
       WHERE boardId = ?
     `).all(boardId);
+
+
+    // --------------------------------------------------
+    // SEND RESULT TO FRONTEND
+    // --------------------------------------------------
 
     res.json({
       boardId: Number(boardId),
@@ -150,39 +293,10 @@ for (const page of data.results) {
   }
 });
 
-app.get('/api/boards/:id/cards', (req, res) => {
-  const boardId = req.params.id;
-  const memberId = req.query.memberId;
 
-  let cards;
-  
-  if (memberId) {
-    cards = db.prepare(`
-      SELECT * FROM cards_snapshot
-      WHERE boardId = ? AND assignedMemberId = ?
-    `).all(boardId, memberId);
-  } else {
-    cards = db.prepare(`
-      SELECT * FROM cards_snapshot
-      WHERE boardId = ?
-    `).all(boardId);
-  }
-
-  res.json(cards);
-});
-
-app.get('/api/boards/:id/members', (req, res) => {
-  const boardId = req.params.id;
-
-  const members = db.prepare(`
-    SELECT DISTINCT assignedMemberId, assignedMemberName
-    FROM cards_snapshot
-    WHERE boardId = ?
-      AND assignedMemberId IS NOT NULL
-  `).all(boardId);
-
-  res.json(members);
-});
+// --------------------------------------------------
+// START SERVER
+// --------------------------------------------------
 
 app.listen(4000, () => {
   console.log('Server running on http://localhost:4000');

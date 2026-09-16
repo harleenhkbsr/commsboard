@@ -18,10 +18,25 @@ db.exec(`
     status TEXT,
     assignedMemberId TEXT,
     assignedMemberName TEXT,
+    tag TEXT,
+    label TEXT,
     lastEditedTime TEXT,
     lastSyncedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (boardId) REFERENCES boards(id)
   )
 `);
+
+// Add these columns to an existing database
+try {
+  db.exec(`ALTER TABLE cards_snapshot ADD COLUMN tag TEXT`);
+} catch (error) {
+  // Column already exists
+}
+
+try {
+  db.exec(`ALTER TABLE cards_snapshot ADD COLUMN label TEXT`);
+} catch (error) {
+  // Column already exists
+}
 
 module.exports = db;

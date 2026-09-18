@@ -7,11 +7,6 @@ const app = express();
 
 app.use(express.json());
 
-
-// --------------------------------------------------
-// CREATE A BOARD
-// --------------------------------------------------
-
 app.post('/api/boards', (req, res) => {
   const { notionDatabaseId, name } = req.body;
 
@@ -30,11 +25,6 @@ app.post('/api/boards', (req, res) => {
   res.json(board);
 });
 
-
-// --------------------------------------------------
-// GET ALL BOARDS
-// --------------------------------------------------
-
 app.get('/api/boards', (req, res) => {
   const boards = db.prepare(`
     SELECT * FROM boards
@@ -42,11 +32,6 @@ app.get('/api/boards', (req, res) => {
 
   res.json(boards);
 });
-
-
-// --------------------------------------------------
-// GET CARDS FOR A BOARD
-// --------------------------------------------------
 
 app.get('/api/boards/:id/cards', (req, res) => {
   const boardId = req.params.id;
@@ -70,11 +55,6 @@ app.get('/api/boards/:id/cards', (req, res) => {
   res.json(cards);
 });
 
-
-// --------------------------------------------------
-// GET MEMBERS FOR A BOARD
-// --------------------------------------------------
-
 app.get('/api/boards/:id/members', (req, res) => {
   const boardId = req.params.id;
 
@@ -90,16 +70,10 @@ app.get('/api/boards/:id/members', (req, res) => {
   res.json(members);
 });
 
-
-// --------------------------------------------------
-// SYNC BOARD FROM NOTION
-// --------------------------------------------------
-
 app.post('/api/boards/:id/sync', async (req, res) => {
   try {
     const boardId = req.params.id;
 
-    // Find the board
     const board = db.prepare(`
       SELECT * FROM boards
       WHERE id = ?
@@ -110,11 +84,6 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         error: 'Board not found'
       });
     }
-
-
-    // --------------------------------------------------
-    // GET CURRENT PAGES FROM NOTION
-    // --------------------------------------------------
 
     const response = await fetch(
       `https://api.notion.com/v1/databases/${board.notionDatabaseId}/query`,
@@ -128,8 +97,6 @@ app.post('/api/boards/:id/sync', async (req, res) => {
       }
     );
 
-
-    // Handle Notion API errors
     if (!response.ok) {
       const error = await response.text();
 
@@ -139,20 +106,9 @@ app.post('/api/boards/:id/sync', async (req, res) => {
       });
     }
 
-
     const data = await response.json();
 
-
-    // --------------------------------------------------
-    // GET THE NOTION PAGE IDS
-    // --------------------------------------------------
-
     const notionPageIds = data.results.map(page => page.id);
-
-
-    // --------------------------------------------------
-    // UPSERT CURRENT NOTION CARDS
-    // --------------------------------------------------
 
     const stmt = db.prepare(`
       INSERT INTO cards_snapshot (
@@ -164,9 +120,10 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         assignedMemberName,
         tag,
         label,
-        lastEditedTime
+        lastEditedTime,
+        lastCommentTime
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
       ON CONFLICT(notionPageId)
       DO UPDATE SET
@@ -178,49 +135,74 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         tag = excluded.tag,
         label = excluded.label,
         lastEditedTime = excluded.lastEditedTime,
+        lastCommentTime = excluded.lastCommentTime,
         lastSyncedAt = CURRENT_TIMESTAMP
     `);
 
-
-    // Process every Notion page
     for (const page of data.results) {
       const properties = page.properties;
 
-
-      // School name
       const schoolName =
         properties.Name?.title?.[0]?.plain_text ?? null;
 
-
-      // Status
       const status =
         properties.Status?.status?.name ?? null;
 
-
-      // Assigned member
       const assignedMemberId =
         properties.Assign?.people?.[0]?.id ?? null;
 
       const assignedMemberName =
         properties.Assign?.people?.[0]?.name ?? null;
 
-
-      // Tag
       const tag =
         properties.Tag?.select?.name ?? null;
 
-
-      // Label
       const label =
         properties.Label?.select?.name ?? null;
 
-
-      // Last edited time
       const lastEditedTime =
         page.last_edited_time ?? null;
 
+      // Fetch comments for this Notion page
+      const commentsResponse = await fetch(
+        `https://api.notion.com/v1/comments?block_id=${page.id}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          }
+        }
+      );
 
-      // Save/update the card
+      if (!commentsResponse.ok) {
+        const error = await commentsResponse.text();
+
+        throw new Error(
+          `Failed to fetch comments for page ${page.id}: ${error}`
+        );
+      }
+
+      const commentsData = await commentsResponse.json();
+      const comments = commentsData.results || [];
+
+      // Find the most recent comment
+      const lastCommentTime = comments.reduce(
+        (latest, comment) => {
+          if (!comment.created_time) {
+            return latest;
+          }
+
+          if (!latest || comment.created_time > latest) {
+            return comment.created_time;
+          }
+
+          return latest;
+        },
+        null
+      );
+
       stmt.run(
         boardId,
         page.id,
@@ -230,30 +212,18 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         assignedMemberName,
         tag,
         label,
-        lastEditedTime
+        lastEditedTime,
+        lastCommentTime
       );
     }
 
-
-    // --------------------------------------------------
-    // DELETE CARDS THAT NO LONGER EXIST IN NOTION
-    // --------------------------------------------------
-
     if (notionPageIds.length === 0) {
-
-      // Notion database is empty,
-      // so remove all cards for this board.
       db.prepare(`
         DELETE FROM cards_snapshot
         WHERE boardId = ?
       `).run(boardId);
-
     } else {
-
-      // Build ?, ?, ?, ... for the Notion page IDs
-      const placeholders = notionPageIds
-        .map(() => '?')
-        .join(', ');
+      const placeholders = notionPageIds.map(() => '?').join(', ');
 
       db.prepare(`
         DELETE FROM cards_snapshot
@@ -262,20 +232,10 @@ app.post('/api/boards/:id/sync', async (req, res) => {
       `).run(boardId, ...notionPageIds);
     }
 
-
-    // --------------------------------------------------
-    // GET UPDATED CARDS
-    // --------------------------------------------------
-
     const cards = db.prepare(`
       SELECT * FROM cards_snapshot
       WHERE boardId = ?
     `).all(boardId);
-
-
-    // --------------------------------------------------
-    // SEND RESULT TO FRONTEND
-    // --------------------------------------------------
 
     res.json({
       boardId: Number(boardId),
@@ -292,11 +252,6 @@ app.post('/api/boards/:id/sync', async (req, res) => {
     });
   }
 });
-
-
-// --------------------------------------------------
-// START SERVER
-// --------------------------------------------------
 
 app.listen(4000, () => {
   console.log('Server running on http://localhost:4000');

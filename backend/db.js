@@ -26,17 +26,19 @@ db.exec(`
   )
 `);
 
-// Add these columns to an existing database
 try {
   db.exec(`ALTER TABLE cards_snapshot ADD COLUMN tag TEXT`);
 } catch (error) {
-  // Column already exists
 }
 
 try {
   db.exec(`ALTER TABLE cards_snapshot ADD COLUMN label TEXT`);
 } catch (error) {
-  // Column already exists
+}
+
+try {
+  db.exec(`ALTER TABLE cards_snapshot ADD COLUMN lastCommentTime TEXT`);
+} catch (error) {
 }
 
 module.exports = db;

@@ -69,7 +69,7 @@ function App() {
   };
 
   // Group cards by member and find each member's
-  // most recently edited card
+  // most recent activity (edit OR comment)
   const groupedCards = members
     .map((member) => {
       const memberCards = cards.filter(
@@ -79,17 +79,42 @@ function App() {
 
       const mostRecentEdit = memberCards.reduce(
         (latest, card) => {
-          if (!card.lastEditedTime) {
+          // Get both possible activity times
+          const cardActivityTimes = [
+            card.lastEditedTime,
+            card.lastCommentTime
+          ].filter(Boolean);
+
+          // No activity for this card
+          if (cardActivityTimes.length === 0) {
             return latest;
           }
 
-          if (!latest || card.lastEditedTime > latest) {
-            return card.lastEditedTime;
+          // Find the most recent activity for this card
+          const cardMostRecentActivity =
+            cardActivityTimes.reduce(
+              (latestTime, time) => {
+                if (!latestTime || time > latestTime) {
+                  return time;
+                }
+
+                return latestTime;
+              },
+              null
+            );
+
+          // Compare this card's activity against
+          // the member's current most recent activity
+          if (
+            !latest ||
+            cardMostRecentActivity > latest
+          ) {
+            return cardMostRecentActivity;
           }
 
           return latest;
         },
-        ''
+        null
       );
 
       return {
@@ -99,12 +124,14 @@ function App() {
       };
     })
     .sort((a, b) => {
-      // Members with no edit time go to the bottom
+      // Members with no activity go to the bottom
       if (!a.mostRecentEdit) return 1;
       if (!b.mostRecentEdit) return -1;
 
-      // Most recently edited member comes first
-      return b.mostRecentEdit.localeCompare(a.mostRecentEdit);
+      // Most recently active member comes first
+      return b.mostRecentEdit.localeCompare(
+        a.mostRecentEdit
+      );
     });
 
   // Keep unassigned cards separate

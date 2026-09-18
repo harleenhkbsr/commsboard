@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+
 import BoardSelector from './components/BoardSelector';
 import MemberGroup from './components/MemberGroup';
 import SyncButton from './components/SyncButton';
@@ -67,13 +68,46 @@ function App() {
     }
   };
 
-  const groupedCards = members.map((member) => ({
-    ...member,
-    cards: cards.filter(
-      (card) => card.assignedMemberId === member.assignedMemberId
-    )
-  }));
+  // Group cards by member and find each member's
+  // most recently edited card
+  const groupedCards = members
+    .map((member) => {
+      const memberCards = cards.filter(
+        (card) =>
+          card.assignedMemberId === member.assignedMemberId
+      );
 
+      const mostRecentEdit = memberCards.reduce(
+        (latest, card) => {
+          if (!card.lastEditedTime) {
+            return latest;
+          }
+
+          if (!latest || card.lastEditedTime > latest) {
+            return card.lastEditedTime;
+          }
+
+          return latest;
+        },
+        ''
+      );
+
+      return {
+        ...member,
+        cards: memberCards,
+        mostRecentEdit
+      };
+    })
+    .sort((a, b) => {
+      // Members with no edit time go to the bottom
+      if (!a.mostRecentEdit) return 1;
+      if (!b.mostRecentEdit) return -1;
+
+      // Most recently edited member comes first
+      return b.mostRecentEdit.localeCompare(a.mostRecentEdit);
+    });
+
+  // Keep unassigned cards separate
   const unassignedCards = cards.filter(
     (card) => card.assignedMemberId === null
   );

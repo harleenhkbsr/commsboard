@@ -1,6 +1,6 @@
 # Comms Board Tracker
 
-A dashboard that connects to a Notion comms board and shows weekly activity — which schools were contacted, which new cards were added, and (eventually) an AI-generated summary of the comments cold callers leave on each card.
+A dashboard that connects to a Notion comms board and shows weekly activity - which schools were contacted, which new cards were added, and (eventually) an AI-generated summary of the comments cold callers leave on each card.
 
 ## Why
 
@@ -50,12 +50,12 @@ package.json
 |---|---|---|
 | id | INTEGER PK | autoincrement |
 | boardId | INTEGER | FK → boards.id |
-| notionPageId | TEXT | unique — upserted on re-sync |
+| notionPageId | TEXT | unique, upserted on re-sync |
 | schoolName | TEXT | from the card's title property |
 | status | TEXT | from the card's status property |
 | assignedMemberId | TEXT | from the card's Person property |
 | assignedMemberName | TEXT | from the card's Person property |
-| lastEditedTime | TEXT | Notion's own timestamp — not yet used to filter sync results |
+| lastEditedTime | TEXT | Notion's own timestamp, not yet used to filter sync results |
 | lastSyncedAt | TEXT | when this app last pulled the card |
 
 ## API
@@ -70,17 +70,17 @@ package.json
 
 Planned but not yet built:
 
-- `GET /api/cards/:pageId/comments` — raw comments for a card
-- `GET /api/cards/:pageId/summary` — lazily-generated AI summary of a card's comments (Gemini)
+- `GET /api/cards/:pageId/comments` - raw comments for a card
+- `GET /api/cards/:pageId/summary` - lazily-generated AI summary of a card's comments (Gemini)
 
 ## Frontend
 
-Working v1: board selector, sync button, and cards grouped by assigned member in collapsible sections (avatar-initial header, card count, expand/collapse toggle). Currently rendering against two placeholder test cards — needs to be pointed at the real comms board with real properties before the layout reflects actual data.
+Working v1: board selector, sync button, and cards grouped by assigned member in collapsible sections (avatar-initial header, card count, expand/collapse toggle). Currently rendering against two placeholder test cards, needs to be pointed at the real comms board with real properties before the layout reflects actual data.
 
 ## What's next (in order)
 
-1. **Real data**: connect the sync to the actual comms board and confirm what properties it tracks beyond name/status/assignee (e.g. contact info, priority, deadline) — update `cards_snapshot` and the sync route to match
-2. **Recency filtering**: currently `sync` pulls every card regardless of when it was edited. Filtering by `last_edited_time` (last 7 days) is what turns this from a mirror of Notion into an actual "what changed this week" digest — the core reason this app is more useful than just opening Notion directly
+1. **Real data**: connect the sync to the actual comms board and confirm what properties it tracks beyond name/status/assignee (e.g. contact info, priority, deadline), update `cards_snapshot` and the sync route to match
+2. **Recency filtering**: currently `sync` pulls every card regardless of when it was edited. Filtering by `last_edited_time` (last 7 days) is what turns this from a mirror of Notion into an actual "what changed this week" digest, the core reason this app is more useful than just opening Notion directly
 3. Comments endpoint + Gemini summarization (stretch goal)
 
 ## Setup

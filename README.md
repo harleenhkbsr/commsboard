@@ -45,7 +45,7 @@ package.json
 | name | TEXT | |
 | addedAt | TEXT | defaults to current timestamp |
 
-**`cards_snapshot`** _(fields below are from initial placeholder test data — being revisited against the real comms board's actual properties)_
+**`cards_snapshot`** _(fields below are from initial placeholder test data being revisited against the real comms board's actual properties)_
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER PK | autoincrement |

@@ -4,6 +4,28 @@ import BoardSelector from './components/BoardSelector';
 import MemberGroup from './components/MemberGroup';
 import SyncButton from './components/SyncButton';
 
+function getCardActivityTime(card) {
+  const activityTimes = [
+    card.lastEditedTime,
+    card.lastCommentTime
+  ].filter(Boolean);
+
+  if (activityTimes.length === 0) {
+    return null;
+  }
+
+  return activityTimes.reduce(
+    (latest, time) => {
+      if (!latest || time > latest) {
+        return time;
+      }
+
+      return latest;
+    },
+    null
+  );
+}
+
 function App() {
   const [boards, setBoards] = useState([]);
   const [boardId, setBoardId] = useState('');
@@ -68,48 +90,37 @@ function App() {
     }
   };
 
-  // Group cards by member and find each member's
-  // most recent activity (edit OR comment)
+  // Group cards by member and sort each member's cards
+  // by their most recent activity
   const groupedCards = members
     .map((member) => {
-      const memberCards = cards.filter(
-        (card) =>
-          card.assignedMemberId === member.assignedMemberId
-      );
+      const memberCards = cards
+        .filter(
+          (card) =>
+            card.assignedMemberId === member.assignedMemberId
+        )
+        .sort((a, b) => {
+          const aActivity = getCardActivityTime(a);
+          const bActivity = getCardActivityTime(b);
+
+          // Cards with no activity go to the bottom
+          if (!aActivity) return 1;
+          if (!bActivity) return -1;
+
+          // Most recently active card comes first
+          return bActivity.localeCompare(aActivity);
+        });
 
       const mostRecentEdit = memberCards.reduce(
         (latest, card) => {
-          // Get both possible activity times
-          const cardActivityTimes = [
-            card.lastEditedTime,
-            card.lastCommentTime
-          ].filter(Boolean);
+          const cardActivity = getCardActivityTime(card);
 
-          // No activity for this card
-          if (cardActivityTimes.length === 0) {
+          if (!cardActivity) {
             return latest;
           }
 
-          // Find the most recent activity for this card
-          const cardMostRecentActivity =
-            cardActivityTimes.reduce(
-              (latestTime, time) => {
-                if (!latestTime || time > latestTime) {
-                  return time;
-                }
-
-                return latestTime;
-              },
-              null
-            );
-
-          // Compare this card's activity against
-          // the member's current most recent activity
-          if (
-            !latest ||
-            cardMostRecentActivity > latest
-          ) {
-            return cardMostRecentActivity;
+          if (!latest || cardActivity > latest) {
+            return cardActivity;
           }
 
           return latest;

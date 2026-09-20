@@ -27,18 +27,39 @@ db.exec(`
 `);
 
 try {
-  db.exec(`ALTER TABLE cards_snapshot ADD COLUMN tag TEXT`);
+  db.exec(`
+    ALTER TABLE cards_snapshot
+    ADD COLUMN tag TEXT
+  `);
 } catch (error) {
+  // Column already exists
 }
 
 try {
-  db.exec(`ALTER TABLE cards_snapshot ADD COLUMN label TEXT`);
+  db.exec(`
+    ALTER TABLE cards_snapshot
+    ADD COLUMN label TEXT
+  `);
 } catch (error) {
+  // Column already exists
 }
 
 try {
-  db.exec(`ALTER TABLE cards_snapshot ADD COLUMN lastCommentTime TEXT`);
+  db.exec(`
+    ALTER TABLE cards_snapshot
+    ADD COLUMN lastCommentTime TEXT
+  `);
 } catch (error) {
+  // Column already exists
+}
+
+try {
+  db.exec(`
+    ALTER TABLE cards_snapshot
+    ADD COLUMN latestCommentText TEXT
+  `);
+} catch (error) {
+  // Column already exists
 }
 
 module.exports = db;

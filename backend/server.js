@@ -7,6 +7,11 @@ const app = express();
 
 app.use(express.json());
 
+
+// ========================================
+// CREATE A BOARD
+// ========================================
+
 app.post('/api/boards', (req, res) => {
   const { notionDatabaseId, name } = req.body;
 
@@ -15,7 +20,10 @@ app.post('/api/boards', (req, res) => {
     VALUES (?, ?)
   `);
 
-  const result = stmt.run(notionDatabaseId, name);
+  const result = stmt.run(
+    notionDatabaseId,
+    name
+  );
 
   const board = db.prepare(`
     SELECT * FROM boards
@@ -25,6 +33,11 @@ app.post('/api/boards', (req, res) => {
   res.json(board);
 });
 
+
+// ========================================
+// GET ALL BOARDS
+// ========================================
+
 app.get('/api/boards', (req, res) => {
   const boards = db.prepare(`
     SELECT * FROM boards
@@ -32,6 +45,11 @@ app.get('/api/boards', (req, res) => {
 
   res.json(boards);
 });
+
+
+// ========================================
+// GET CARDS FOR A BOARD
+// ========================================
 
 app.get('/api/boards/:id/cards', (req, res) => {
   const boardId = req.params.id;
@@ -44,7 +62,10 @@ app.get('/api/boards/:id/cards', (req, res) => {
       SELECT * FROM cards_snapshot
       WHERE boardId = ?
         AND assignedMemberId = ?
-    `).all(boardId, memberId);
+    `).all(
+      boardId,
+      memberId
+    );
   } else {
     cards = db.prepare(`
       SELECT * FROM cards_snapshot
@@ -54,6 +75,11 @@ app.get('/api/boards/:id/cards', (req, res) => {
 
   res.json(cards);
 });
+
+
+// ========================================
+// GET MEMBERS FOR A BOARD
+// ========================================
 
 app.get('/api/boards/:id/members', (req, res) => {
   const boardId = req.params.id;
@@ -70,9 +96,18 @@ app.get('/api/boards/:id/members', (req, res) => {
   res.json(members);
 });
 
+
+// ========================================
+// SYNC BOARD FROM NOTION
+// ========================================
+
 app.post('/api/boards/:id/sync', async (req, res) => {
   try {
     const boardId = req.params.id;
+
+    // ----------------------------------------
+    // Find the board
+    // ----------------------------------------
 
     const board = db.prepare(`
       SELECT * FROM boards
@@ -84,6 +119,11 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         error: 'Board not found'
       });
     }
+
+
+    // ----------------------------------------
+    // Get pages from Notion
+    // ----------------------------------------
 
     const response = await fetch(
       `https://api.notion.com/v1/databases/${board.notionDatabaseId}/query`,
@@ -108,7 +148,14 @@ app.post('/api/boards/:id/sync', async (req, res) => {
 
     const data = await response.json();
 
-    const notionPageIds = data.results.map(page => page.id);
+    const notionPageIds = data.results.map(
+      (page) => page.id
+    );
+
+
+    // ----------------------------------------
+    // Prepare card insert/update statement
+    // ----------------------------------------
 
     const stmt = db.prepare(`
       INSERT INTO cards_snapshot (
@@ -121,9 +168,10 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         tag,
         label,
         lastEditedTime,
-        lastCommentTime
+        lastCommentTime,
+        latestCommentText
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
       ON CONFLICT(notionPageId)
       DO UPDATE SET
@@ -136,17 +184,38 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         label = excluded.label,
         lastEditedTime = excluded.lastEditedTime,
         lastCommentTime = excluded.lastCommentTime,
+        latestCommentText = excluded.latestCommentText,
         lastSyncedAt = CURRENT_TIMESTAMP
     `);
+
+
+    // ----------------------------------------
+    // Process every Notion page
+    // ----------------------------------------
 
     for (const page of data.results) {
       const properties = page.properties;
 
+
+      // ----------------------------------------
+      // School name
+      // ----------------------------------------
+
       const schoolName =
         properties.Name?.title?.[0]?.plain_text ?? null;
 
+
+      // ----------------------------------------
+      // Status
+      // ----------------------------------------
+
       const status =
         properties.Status?.status?.name ?? null;
+
+
+      // ----------------------------------------
+      // Assigned member
+      // ----------------------------------------
 
       const assignedMemberId =
         properties.Assign?.people?.[0]?.id ?? null;
@@ -154,16 +223,35 @@ app.post('/api/boards/:id/sync', async (req, res) => {
       const assignedMemberName =
         properties.Assign?.people?.[0]?.name ?? null;
 
+
+      // ----------------------------------------
+      // Tag
+      // ----------------------------------------
+
       const tag =
         properties.Tag?.select?.name ?? null;
+
+
+      // ----------------------------------------
+      // Label
+      // ----------------------------------------
 
       const label =
         properties.Label?.select?.name ?? null;
 
+
+      // ----------------------------------------
+      // Last edited time
+      // ----------------------------------------
+
       const lastEditedTime =
         page.last_edited_time ?? null;
 
-      // Fetch comments for this Notion page
+
+      // ----------------------------------------
+      // Get comments for this page
+      // ----------------------------------------
+
       const commentsResponse = await fetch(
         `https://api.notion.com/v1/comments?block_id=${page.id}`,
         {
@@ -184,24 +272,57 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         );
       }
 
-      const commentsData = await commentsResponse.json();
-      const comments = commentsData.results || [];
+      const commentsData =
+        await commentsResponse.json();
 
-      // Find the most recent comment
-      const lastCommentTime = comments.reduce(
+      const comments =
+        commentsData.results || [];
+
+
+      // ----------------------------------------
+      // Find the latest comment
+      // ----------------------------------------
+
+      const latestComment = comments.reduce(
         (latest, comment) => {
           if (!comment.created_time) {
             return latest;
           }
 
-          if (!latest || comment.created_time > latest) {
-            return comment.created_time;
+          if (
+            !latest ||
+            comment.created_time > latest.created_time
+          ) {
+            return comment;
           }
 
           return latest;
         },
         null
       );
+
+
+      // ----------------------------------------
+      // Extract latest comment timestamp
+      // ----------------------------------------
+
+      const lastCommentTime =
+        latestComment?.created_time ?? null;
+
+
+      // ----------------------------------------
+      // Extract latest comment text
+      // ----------------------------------------
+
+      const latestCommentText =
+        latestComment?.rich_text
+          ?.map((text) => text.plain_text)
+          .join('') ?? null;
+
+
+      // ----------------------------------------
+      // Save card to SQLite
+      // ----------------------------------------
 
       stmt.run(
         boardId,
@@ -213,9 +334,16 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         tag,
         label,
         lastEditedTime,
-        lastCommentTime
+        lastCommentTime,
+        latestCommentText
       );
     }
+
+
+    // ----------------------------------------
+    // Remove cards that no longer exist
+    // in Notion
+    // ----------------------------------------
 
     if (notionPageIds.length === 0) {
       db.prepare(`
@@ -223,19 +351,35 @@ app.post('/api/boards/:id/sync', async (req, res) => {
         WHERE boardId = ?
       `).run(boardId);
     } else {
-      const placeholders = notionPageIds.map(() => '?').join(', ');
+      const placeholders =
+        notionPageIds
+          .map(() => '?')
+          .join(', ');
 
       db.prepare(`
         DELETE FROM cards_snapshot
         WHERE boardId = ?
           AND notionPageId NOT IN (${placeholders})
-      `).run(boardId, ...notionPageIds);
+      `).run(
+        boardId,
+        ...notionPageIds
+      );
     }
+
+
+    // ----------------------------------------
+    // Get updated cards
+    // ----------------------------------------
 
     const cards = db.prepare(`
       SELECT * FROM cards_snapshot
       WHERE boardId = ?
     `).all(boardId);
+
+
+    // ----------------------------------------
+    // Return sync result
+    // ----------------------------------------
 
     res.json({
       boardId: Number(boardId),
@@ -253,6 +397,13 @@ app.post('/api/boards/:id/sync', async (req, res) => {
   }
 });
 
+
+// ========================================
+// START SERVER
+// ========================================
+
 app.listen(4000, () => {
-  console.log('Server running on http://localhost:4000');
+  console.log(
+    'Server running on http://localhost:4000'
+  );
 });

@@ -1,4 +1,9 @@
+import { useState } from 'react';
+
 function Card({ card }) {
+  const [summary, setSummary] = useState(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+
   const statusColors = {
     'To be contacted': 'bg-yellow-100 text-yellow-800',
     'Follow up': 'bg-blue-100 text-blue-800',
@@ -25,6 +30,22 @@ function Card({ card }) {
         timeStyle: 'short',
       })
     : null;
+
+  const fetchSummary = async () => {
+    setLoadingSummary(true);
+
+    try {
+      const response = await fetch(
+        `/api/cards/${card.notionPageId}/summary`
+      );
+
+      const data = await response.json();
+
+      setSummary(data.summary);
+    } finally {
+      setLoadingSummary(false);
+    }
+  };
 
   return (
     <div className="border-b px-5 py-4 last:border-b-0">
@@ -68,6 +89,30 @@ function Card({ card }) {
             <p className="mt-1 text-xs text-gray-400">
               Commented {commentTime}
             </p>
+          )}
+
+          {!summary && (
+            <button
+              onClick={fetchSummary}
+              disabled={loadingSummary}
+              className="mt-2 rounded-md bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loadingSummary
+                ? 'Summarizing...'
+                : 'Summarize comments'}
+            </button>
+          )}
+
+          {summary !== null && (
+            <div className="mt-3 rounded-md bg-purple-50 px-3 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-purple-700">
+                AI Summary
+              </p>
+
+              <p className="mt-1 text-sm text-purple-900">
+                {summary}
+              </p>
+            </div>
           )}
         </div>
       )}

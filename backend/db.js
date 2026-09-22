@@ -23,7 +23,15 @@ db.exec(`
     lastEditedTime TEXT,
     lastSyncedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (boardId) REFERENCES boards(id)
-  )
+  );
+
+  CREATE TABLE IF NOT EXISTS comment_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    notionPageId TEXT NOT NULL UNIQUE,
+    commentCount INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    generatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 try {

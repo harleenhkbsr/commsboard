@@ -1,35 +1,44 @@
 # Comms Board Tracker
 
-A dashboard that connects to a Notion comms board and shows weekly activity - which schools were contacted, which new cards were added, and (eventually) an AI-generated summary of the comments cold callers leave on each card.
+A dashboard that connects to a Notion comms board and surfaces cold-calling activity — which schools were contacted, who's been most active, and an AI-generated summary of each school's comment history — without having to scroll through Notion directly.
 
 ## Why
 
-The team keeps a Notion database of schools being cold-called. Cards get assigned to a caller, who logs progress in comments. This project pulls that data out of Notion into a browsable dashboard, filterable by team member, so activity doesn't have to be checked by scrolling through Notion directly.
+The team keeps a Notion database of schools being cold-called. Cards get assigned to a caller, who logs progress in comments over time. This project pulls that data out of Notion into a browsable dashboard, grouped by team member and sorted by recent activity, with AI-generated summaries of each card's comment thread — so getting up to speed on a school takes seconds instead of reading through raw call logs.
 
-## Stack
+## Features
+
+- Register any Notion database as a trackable "board"
+- Manually sync live card data from Notion (school name, status, assignee, tag, label, comment activity)
+- Dashboard grouped by assigned team member, each in a collapsible section
+- Members and their cards sorted by most recent activity — factoring in both Notion property edits _and_ comment timestamps (Notion doesn't roll comments into a card's edit time, so these are tracked and combined separately)
+- Color-coded status and tag indicators
+- Each card shows its latest raw comment, with timestamp
+- On-click AI summarization of a card's full comment thread via the Gemini API, cached until new comments are added
+
+## Tech stack
 
 - **Backend:** Node.js + Express
 - **Database:** SQLite via Node's built-in `node:sqlite` module
-- **Frontend:** React (Vite) + Tailwind CSS + `lucide-react`
-- **External APIs:** Notion API (core integration); Google Gemini API planned for comment summarization (deprioritized until the core sync/dashboard is working)
+- **Frontend:** React (Vite) + Tailwind CSS
+- **External APIs:** Notion API (data source), Google Gemini API (`gemini-3.6-flash`, comment summarization)
 
 ## Project structure
 
 comms-board-tracker/
 backend/
-server.js → Express app, routes
+server.js → Express app, all routes
 db.js → opens comms.db, creates tables
-.env → NOTION_TOKEN, NOTION_DATABASE_ID (not committed)
+.env → NOTION_TOKEN, NOTION_DATABASE_ID, GEMINI_API_KEY (not committed)
 package.json
 frontend/
 src/
-App.jsx → top-level state (boardId, cards, members), fetch orchestration
-api.js → fetch wrapper for all backend routes
+App.jsx → top-level state, fetch orchestration, member/card grouping + sorting
 components/
 BoardSelector.jsx
 MemberGroup.jsx → header row + collapse toggle, renders its CardList
 CardList.jsx
-Card.jsx
+Card.jsx → status/tag/label badges, latest comment, AI summary button
 SyncButton.jsx
 index.css
 vite.config.js → Tailwind plugin + /api proxy to localhost:4000
@@ -45,51 +54,54 @@ package.json
 | name | TEXT | |
 | addedAt | TEXT | defaults to current timestamp |
 
-**`cards_snapshot`** _(fields below are from initial placeholder test data being revisited against the real comms board's actual properties)_
+**`cards_snapshot`**
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER PK | autoincrement |
 | boardId | INTEGER | FK → boards.id |
-| notionPageId | TEXT | unique, upserted on re-sync |
+| notionPageId | TEXT | unique — upserted on re-sync |
 | schoolName | TEXT | from the card's title property |
-| status | TEXT | from the card's status property |
-| assignedMemberId | TEXT | from the card's Person property |
-| assignedMemberName | TEXT | from the card's Person property |
-| lastEditedTime | TEXT | Notion's own timestamp, not yet used to filter sync results |
+| status | TEXT | pipeline stage (e.g. "Follow up", "Meeting Scheduled") |
+| assignedMemberId | TEXT | from the card's Assign (person) property |
+| assignedMemberName | TEXT | from the card's Assign (person) property |
+| tag | TEXT | Hot / Mild / Cold |
+| label | TEXT | situational note (e.g. "Asked for an email to be sent") |
+| lastEditedTime | TEXT | Notion's own property-edit timestamp |
+| lastCommentTime | TEXT | timestamp of the most recent comment (tracked separately — Notion doesn't update lastEditedTime for comments) |
+| latestCommentText | TEXT | text of the most recent comment |
 | lastSyncedAt | TEXT | when this app last pulled the card |
+
+**`comment_summaries`**
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | autoincrement |
+| notionPageId | TEXT | unique |
+| commentCount | INTEGER | cache-invalidation key — regenerates only if this changes |
+| summary | TEXT | Gemini-generated summary of the full comment thread |
+| generatedAt | TEXT | defaults to current timestamp |
 
 ## API
 
-| Method | Route                     | Does                                                          |
-| ------ | ------------------------- | ------------------------------------------------------------- |
-| POST   | `/api/boards`             | register a Notion database as a trackable board               |
-| GET    | `/api/boards`             | list registered boards                                        |
-| POST   | `/api/boards/:id/sync`    | pull current cards from Notion into `cards_snapshot` (upsert) |
-| GET    | `/api/boards/:id/cards`   | list cards for a board (`?memberId=` optional filter)         |
-| GET    | `/api/boards/:id/members` | deduplicated list of members with cards on a board            |
-
-Planned but not yet built:
-
-- `GET /api/cards/:pageId/comments` - raw comments for a card
-- `GET /api/cards/:pageId/summary` - lazily-generated AI summary of a card's comments (Gemini)
-
-## Frontend
-
-Working v1: board selector, sync button, and cards grouped by assigned member in collapsible sections (avatar-initial header, card count, expand/collapse toggle). Currently rendering against two placeholder test cards, needs to be pointed at the real comms board with real properties before the layout reflects actual data.
-
-## What's next (in order)
-
-1. **Real data**: connect the sync to the actual comms board and confirm what properties it tracks beyond name/status/assignee (e.g. contact info, priority, deadline), update `cards_snapshot` and the sync route to match
-2. **Recency filtering**: currently `sync` pulls every card regardless of when it was edited. Filtering by `last_edited_time` (last 7 days) is what turns this from a mirror of Notion into an actual "what changed this week" digest, the core reason this app is more useful than just opening Notion directly
-3. Comments endpoint + Gemini summarization (stretch goal)
+| Method | Route                        | Does                                                                                                      |
+| ------ | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/boards`                | register a Notion database as a trackable board                                                           |
+| GET    | `/api/boards`                | list registered boards                                                                                    |
+| POST   | `/api/boards/:id/sync`       | pull current cards + comments from Notion into `cards_snapshot` (upsert; removes cards deleted in Notion) |
+| GET    | `/api/boards/:id/cards`      | list cards for a board (`?memberId=` optional filter)                                                     |
+| GET    | `/api/boards/:id/members`    | deduplicated list of members with cards on a board                                                        |
+| GET    | `/api/cards/:pageId/summary` | AI summary of a card's full comment thread, generated on request and cached until comment count changes   |
 
 ## Setup
 
-1. Create a Notion internal integration at [notion.so/my-integrations](https://notion.so/my-integrations) and share your comms board database with it.
-2. In `backend/`, create a `.env` file:
-   NOTION_TOKEN=your_integration_secret
-   NOTION_DATABASE_ID=your_database_id
-3. Install dependencies and run the server:
+1. Create a Notion internal integration at [notion.so/my-integrations](https://notion.so/my-integrations), enable **Read content** and **Read comments**, and share your comms board database with it (`···` menu → Connections).
+2. Get a Gemini API key from [aistudio.google.com](https://aistudio.google.com) (free tier).
+3. In `backend/`, create a `.env` file:
+
+NOTION_TOKEN=your_integration_secret
+NOTION_DATABASE_ID=your_database_id
+GEMINI_API_KEY=your_gemini_key
+
+4. Install dependencies and run the backend:
 
 ```bash
    cd backend
@@ -97,7 +109,15 @@ Working v1: board selector, sync button, and cards grouped by assigned member in
    node server.js
 ```
 
-4. Register your board:
+5. In a separate terminal, run the frontend:
+
+```bash
+   cd frontend
+   npm install
+   npm run dev
+```
+
+6. Register a board (one-time):
 
 ```bash
    curl -X POST http://localhost:4000/api/boards \
@@ -105,36 +125,15 @@ Working v1: board selector, sync button, and cards grouped by assigned member in
      -d '{"notionDatabaseId": "your_database_id", "name": "Comms Board"}'
 ```
 
-5. Sync it:
-
-```bash
-   curl -X POST http://localhost:4000/api/boards/1/sync
-```
-
-6. Fetch cards or members:
-
-```bash
-   curl http://localhost:4000/api/boards/1/cards
-   curl http://localhost:4000/api/boards/1/members
-```
-
-7. Run the frontend (separate terminal, from `frontend/`):
-
-```bash
-   npm install
-   npm run dev
-```
+7. Open the frontend and click **Sync** to pull live data.
 
 ## Status
 
-- [x] Notion integration created and permissioned
-- [x] `boards` table + `POST`/`GET /api/boards`
-- [x] `cards_snapshot` table
-- [x] `POST /api/boards/:id/sync` pulling real data from Notion (upsert verified)
-- [x] `GET /api/boards/:id/cards` with member filtering
-- [x] `GET /api/boards/:id/members`
-- [x] Frontend v1: board selector, sync, grouped/collapsible member sections
-- [ ] Point sync at real comms board data / real properties
-- [ ] Recency (`last_edited_time`) filtering on sync
-- [ ] Comments endpoint
-- [ ] Gemini-based comment summarization (stretch goal)
+- [x] Full backend: boards, sync (with upsert + stale-card cleanup), cards, members
+- [x] Comment tracking: separate timestamp + text, since Notion excludes comments from `lastEditedTime`
+- [x] Activity-aware sorting (members and their cards) combining edit and comment recency
+- [x] Tag/label/status extraction and color-coded display
+- [x] Gemini-powered comment summarization, cached and generated on request
+- [x] Frontend: board selector, sync button, collapsible member groups, per-card AI summary
+- [ ] Recency filtering on sync (limit to last-edited-in-N-days, for a true "weekly digest" view)
+- [ ] Visual redesign (current UI is functional but using default Tailwind styling — in progress)

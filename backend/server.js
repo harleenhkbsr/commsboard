@@ -399,6 +399,247 @@ app.post('/api/boards/:id/sync', async (req, res) => {
 
 
 // ========================================
+// TEST GEMINI
+// ========================================
+
+app.get('/api/test-gemini', async (req, res) => {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `
+                    Here are some test comments from a school:
+
+                    "Can you send me more information about the English program?"
+                    "WhatsApp would be better for communication."
+                    "I will discuss this with the principal and get back to you."
+
+                    Summarize these comments in one short paragraph.
+                  `
+                }
+              ]
+            }
+          ]
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    res.status(response.status).json(data);
+
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: 'Failed to call Gemini',
+      details: error.message
+    });
+  }
+});
+
+
+// ========================================
+// GET COMMENT SUMMARY FOR A CARD
+// ========================================
+
+app.get('/api/cards/:pageId/summary', async (req, res) => {
+  try {
+    const pageId = req.params.pageId;
+
+
+    // ----------------------------------------
+    // 1. Fetch comments from Notion
+    // ----------------------------------------
+
+    const commentsResponse = await fetch(
+      `https://api.notion.com/v1/comments?block_id=${pageId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${process.env.NOTION_TOKEN}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (!commentsResponse.ok) {
+      const error = await commentsResponse.text();
+
+      return res.status(commentsResponse.status).json({
+        error: 'Notion API request failed',
+        details: error
+      });
+    }
+
+    const commentsData =
+      await commentsResponse.json();
+
+    const comments =
+      commentsData.results || [];
+
+
+    // ----------------------------------------
+    // 2. Handle zero comments
+    // ----------------------------------------
+
+    if (comments.length === 0) {
+      return res.json({
+        summary: null
+      });
+    }
+
+
+    // ----------------------------------------
+    // 3. Check cached summary
+    // ----------------------------------------
+
+    const cachedSummary = db.prepare(`
+      SELECT *
+      FROM comment_summaries
+      WHERE notionPageId = ?
+    `).get(pageId);
+
+    if (
+      cachedSummary &&
+      cachedSummary.commentCount === comments.length
+    ) {
+      return res.json({
+        summary: cachedSummary.summary
+      });
+    }
+
+
+    // ----------------------------------------
+    // 4. Build the comment prompt
+    // ----------------------------------------
+
+    const commentText = comments
+      .map((comment, index) => {
+        const text =
+          comment.rich_text
+            ?.map((text) => text.plain_text)
+            .join('') ?? '';
+
+        return `${index + 1}. ${text}`;
+      })
+      .join('\n');
+
+
+    const prompt = `
+Summarize this sequence of call log comments in 1-2 sentences, focused on the current status and next steps.
+
+Comments:
+
+${commentText}
+`;
+
+
+    // ----------------------------------------
+    // 5. Call Gemini
+    // ----------------------------------------
+
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: prompt
+                }
+              ]
+            }
+          ]
+        })
+      }
+    );
+
+    if (!geminiResponse.ok) {
+      const error = await geminiResponse.text();
+
+      return res.status(geminiResponse.status).json({
+        error: 'Gemini API request failed',
+        details: error
+      });
+    }
+
+    const data = await geminiResponse.json();
+
+
+    // ----------------------------------------
+    // 6. Extract summary
+    // ----------------------------------------
+
+    const summary =
+      data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+
+    if (!summary) {
+      return res.status(500).json({
+        error: 'Gemini returned no summary'
+      });
+    }
+
+
+    // ----------------------------------------
+    // Cache summary
+    // ----------------------------------------
+
+    db.prepare(`
+      INSERT INTO comment_summaries (
+        notionPageId,
+        commentCount,
+        summary
+      )
+      VALUES (?, ?, ?)
+
+      ON CONFLICT(notionPageId)
+      DO UPDATE SET
+        commentCount = excluded.commentCount,
+        summary = excluded.summary,
+        generatedAt = CURRENT_TIMESTAMP
+    `).run(
+      pageId,
+      comments.length,
+      summary
+    );
+
+
+    // ----------------------------------------
+    // 7. Return summary
+    // ----------------------------------------
+
+    res.json({
+      summary: summary
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      error: 'Failed to generate comment summary',
+      details: error.message
+    });
+  }
+});
+
+
+// ========================================
 // START SERVER
 // ========================================
 

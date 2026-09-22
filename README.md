@@ -1,17 +1,17 @@
 # Comms Board Tracker
 
-A dashboard that connects to a Notion comms board and surfaces cold-calling activity — which schools were contacted, who's been most active, and an AI-generated summary of each school's comment history — without having to scroll through Notion directly.
+A dashboard that connects to a Notion comms board and surfaces cold-calling activity, which schools were contacted, who's been most active, and an AI-generated summary of each school's comment history, without having to scroll through Notion directly.
 
 ## Why
 
-The team keeps a Notion database of schools being cold-called. Cards get assigned to a caller, who logs progress in comments over time. This project pulls that data out of Notion into a browsable dashboard, grouped by team member and sorted by recent activity, with AI-generated summaries of each card's comment thread — so getting up to speed on a school takes seconds instead of reading through raw call logs.
+The team keeps a Notion database of schools being cold-called. Cards get assigned to a caller, who logs progress in comments over time. This project pulls that data out of Notion into a browsable dashboard, grouped by team member and sorted by recent activity, with AI-generated summaries of each card's comment thread, so getting up to speed on a school takes seconds instead of reading through raw call logs.
 
 ## Features
 
 - Register any Notion database as a trackable "board"
 - Manually sync live card data from Notion (school name, status, assignee, tag, label, comment activity)
 - Dashboard grouped by assigned team member, each in a collapsible section
-- Members and their cards sorted by most recent activity — factoring in both Notion property edits _and_ comment timestamps (Notion doesn't roll comments into a card's edit time, so these are tracked and combined separately)
+- Members and their cards sorted by most recent activity, factoring in both Notion property edits _and_ comment timestamps (Notion doesn't roll comments into a card's edit time, so these are tracked and combined separately)
 - Color-coded status and tag indicators
 - Each card shows its latest raw comment, with timestamp
 - On-click AI summarization of a card's full comment thread via the Gemini API, cached until new comments are added
